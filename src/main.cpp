@@ -1,11 +1,14 @@
 #include "ofMain.h"
-#include "ofApp.h"
+#include "Player.h"
+#include <X11/Xlib.h>
 
 //========================================================================
 int main( ){
-    auto window = make_shared<ofAppNoWindow>();
-    auto app = make_shared<ofApp>();
+    Display* d = XOpenDisplay(NULL);
+    Screen* s = DefaultScreenOfDisplay(d);
 
-    ofRunApp( window, app);
-    ofRunMainLoop();
+    ofSetupOpenGL(s->width,s->height,OF_FULLSCREEN);
+    Player* p = new Player();
+    p->set_dimension(s->width, s->height);
+    ofRunApp(p);
 }
