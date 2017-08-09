@@ -25,7 +25,10 @@ class Player : public ofBaseApp{
         ofVideoPlayer* current_player;
         ofVideoPlayer* next_player;
 
+        bool skip;
+
         float current_alpha;
+        float remain;
 
         int screen_w;
         int screen_h;

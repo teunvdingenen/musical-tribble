@@ -12,8 +12,9 @@ void Player::setup(){
     ofBackground(0);
     ofEnableAlphaBlending();
     ofSetVerticalSync(true);
-    playing = 1; // TODO change to 0
+    playing = 0; // TODO change to 0
     current_alpha = 255;
+    skip = false;
 
     recheck_directory();
     if( files.size() == 0 ) {
@@ -44,6 +45,7 @@ void Player::cue() {
     next_player->load(files[next]);
     next_player->setLoopState(OF_LOOP_NORMAL);
     next_player->stop();
+    skip = false;
 }
 
 void Player::update(){
@@ -52,12 +54,18 @@ void Player::update(){
     previous_frame = time / 1000;
 
     current_player->update();
-    float remain = current_player->getDuration() - 
-        current_player->getPosition() * 
-        current_player->getDuration(); 
-    remain *= 1000;
+    if( next_player->isPlaying() ) {
+        next_player->update();
+    }
+    if( skip ) {
+        remain -= dt;
+    } else {
+        remain = (current_player->getDuration() - 
+            current_player->getPosition() * 
+            current_player->getDuration()) * 1000; 
+    }
     if( remain < FADE_TIME ) {
-        current_alpha -= 255.0f * remain / FADE_TIME;
+        current_alpha = 255.0f * remain / FADE_TIME;
         float v = 1 * remain / FADE_TIME;
         current_player->setVolume(v);
         next_player->setVolume(1 - v);
@@ -70,6 +78,10 @@ void Player::update(){
             next_player = current_player;
             current_player = foo;
             current_player->setVolume(1);
+            ++playing;
+            if( playing >= files.size() ) {
+                playing = 0;
+            }
             cue();
         }
     }
@@ -87,7 +99,12 @@ void Player::draw(){
 
 void Player::keyPressed(int key){
     std::cout << key << std::endl;
-    ofExit();
+    if( key == 'n' ) {
+        skip = true;
+        remain = FADE_TIME;
+    } else {
+        ofExit();
+    }
 }
 
 void Player::recheck_directory() {
