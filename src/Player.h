@@ -18,6 +18,7 @@ class Player : public ofBaseApp{
         void recheck_directory();
    private:
         const float FADE_TIME = 7000;
+        const unsigned long DIR_INTERVAL = 10000;
 
         ofVideoPlayer player_a;
         ofVideoPlayer player_b;
@@ -26,6 +27,7 @@ class Player : public ofBaseApp{
         ofVideoPlayer* next_player;
 
         bool skip;
+        bool reverse;
 
         float current_alpha;
         float remain;
@@ -34,8 +36,10 @@ class Player : public ofBaseApp{
         int screen_h;
 
         int playing;
+        int cued;
 
         unsigned long previous_frame;
+        unsigned long last_dir_check;
 
         vector<string> files;
 };

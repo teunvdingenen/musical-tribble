@@ -12,9 +12,11 @@ void Player::setup(){
     ofBackground(0);
     ofEnableAlphaBlending();
     ofSetVerticalSync(true);
-    playing = 0; // TODO change to 0
+    ofHideCursor();
+    playing = 0; 
     current_alpha = 255;
     skip = false;
+    reverse = false;
 
     recheck_directory();
     if( files.size() == 0 ) {
@@ -24,6 +26,7 @@ void Player::setup(){
 
     clock_t start = clock();
     previous_frame = start / 1000;
+    last_dir_check = previous_frame;
     load();
     cue();
 }
@@ -33,25 +36,42 @@ void Player::load() {
     next_player = &player_b;
 
     current_player->load(files[playing]);
-    current_player->setLoopState(OF_LOOP_NORMAL);
+    current_player->setLoopState(OF_LOOP_NONE);
+    current_player->setVolume(1);
     current_player->play();
 }
 
 void Player::cue() {
     int next = playing+1;
+    if( reverse ) {
+        next = playing-1;
+    }
     if( next >= files.size() ) {
         next = 0;
+    } else if( next < 0 ) {
+        next = files.size() - 1;
+    }
+    if( next_player->isLoaded() ) {
+        next_player->close();
     }
     next_player->load(files[next]);
-    next_player->setLoopState(OF_LOOP_NORMAL);
+    next_player->setLoopState(OF_LOOP_NONE);
     next_player->stop();
+    next_player->setPosition(0);
     skip = false;
+    cued = next;
 }
 
 void Player::update(){
     clock_t time = clock();
     unsigned long dt = time / 1000 - previous_frame;
     previous_frame = time / 1000;
+
+    if( (previous_frame - last_dir_check) > DIR_INTERVAL ) {
+        std::cout << "Checking dir" << std::endl;
+        last_dir_check = previous_frame;
+        recheck_directory();
+    }
 
     current_player->update();
     if( next_player->isPlaying() ) {
@@ -72,16 +92,13 @@ void Player::update(){
         if( !next_player->isPlaying() ) {
             next_player->play();
         }
-        if( current_alpha < 0 ) {
+        if( current_alpha < 10 ) {
             current_alpha = 255;
             ofVideoPlayer* foo = next_player;
             next_player = current_player;
             current_player = foo;
             current_player->setVolume(1);
-            ++playing;
-            if( playing >= files.size() ) {
-                playing = 0;
-            }
+            playing = cued;
             cue();
         }
     }
@@ -89,31 +106,63 @@ void Player::update(){
 
 void Player::draw(){
     if( next_player->isPlaying() ) {
-        ofSetColor(255);
-        next_player->draw(0,0);
-    }
-    ofSetColor(255,255,255,current_alpha);
-    current_player->draw(0,0);
+        ofPushMatrix();
+        ofPushStyle();
 
+        ofSetColor(255);
+        ofTranslate(screen_w/2,screen_h/2);
+        next_player->draw(-next_player->getWidth()/2,
+                -next_player->getHeight()/2);
+
+        ofPopStyle();
+        ofPopMatrix();
+
+    }
+    ofPushMatrix();
+    ofPushStyle();
+
+    ofSetColor(255,255,255,current_alpha);
+    ofTranslate(screen_w/2,screen_h/2);
+    current_player->draw(-current_player->getWidth()/2,
+            -current_player->getHeight()/2);
+
+    ofPopStyle();
+    ofPopMatrix();
 }
 
 void Player::keyPressed(int key){
-    std::cout << key << std::endl;
-    if( key == 'n' ) {
-        skip = true;
-        remain = FADE_TIME;
-    } else {
-        ofExit();
+    switch( key ) {
+        case 'd': //LEFT
+            if( !skip ) {
+                skip = true;
+                reverse = true;
+                remain = FADE_TIME;
+            }
+            break;
+        case 'f': //RIGHT
+            if( !skip ) {
+                skip = true;
+                reverse = false;
+                remain = FADE_TIME;
+            }
+            break;
+        case 'e': // UP
+            break;
+        case 'g': //DOWN
+            break;
+        case 13: //OK
+            break;
+        case 'h': //UPUP
+            break;
+        case 'i': //DOWNDOWN
+            break;
     }
 }
 
 void Player::recheck_directory() {
     ofDirectory dir(".");
     dir.listDir();
-    if( files.size() != dir.size() ) {
-        files.clear();
-        for(int i = 0; i < dir.size(); i++) {
-            files.push_back(dir.getPath(i)); 
-        }
+    for(int i = 0; i < dir.size(); i++) {
+        files.push_back(dir.getPath(i)); 
     }
 }
