@@ -10,13 +10,27 @@ void Player::set_dimension(int w,int h) {
 
 void Player::setup(){
     ofBackground(0);
-    ofEnableAlphaBlending();
     ofSetVerticalSync(true);
+    ofEnableAlphaBlending();
     ofHideCursor();
     playing = 0; 
-    current_alpha = 255;
-    skip = false;
+    alpha = 255;
     reverse = false;
+    state = PLAYER_PLAY;
+
+    std::ifstream i("settings.json");
+    if( i.good() ) {
+        i >> settings;
+        i.close();
+    } else {
+        settings["width"] = screen_w;
+        settings["height"] = screen_h;
+        settings["position"]["x"] = 0;
+        settings["position"]["y"] = 0;
+    }
+
+    size = ofVec2f(settings["width"], settings["height"]);
+    pos = ofVec2f(settings["position"]["x"],settings["position"]["y"]);
 
     recheck_directory();
     if( files.size() == 0 ) {
@@ -24,45 +38,46 @@ void Player::setup(){
         ofExit();
     }
 
+    /**
+    int fd;
+    if( (fd = open("/dev/input/mouse1", O_RDONLY)) == -1 )
+        printf("/dev/input/mouse1 is not a valid device\n");
+
+    ioctl(fd, EVIOCGRAB, 1);
+    **/
+
     clock_t start = clock();
     previous_frame = start / 1000;
     last_dir_check = previous_frame;
     load();
-    cue();
 }
 
 void Player::load() {
-    current_player = &player_a;
-    next_player = &player_b;
-
-    current_player->load(files[playing]);
-    current_player->setLoopState(OF_LOOP_NONE);
-    current_player->setVolume(1);
-    current_player->play();
-}
-
-void Player::cue() {
-    int next = playing+1;
     if( reverse ) {
-        next = playing-1;
+        playing -= 1;
+    } else {
+        playing += 1;
     }
-    if( next >= files.size() ) {
-        next = 0;
-    } else if( next < 0 ) {
-        next = files.size() - 1;
+    if( playing < 0 ) {
+        playing += files.size(); 
+    } else if( playing >= (int)files.size() ) {
+        playing -= files.size();
+    } 
+    if( player.isLoaded() ) {
+        player.closeMovie();
     }
-    if( next_player->isLoaded() ) {
-        next_player->close();
-    }
-    next_player->load(files[next]);
-    next_player->setLoopState(OF_LOOP_NONE);
-    next_player->stop();
-    next_player->setPosition(0);
-    skip = false;
-    cued = next;
+    fadeout = false;
+    player.load(files[playing]);
+    player.setLoopState(OF_LOOP_NONE);
+    player.setPosition(0);
+    player.play();
 }
 
 void Player::update(){
+    if( previous_frame - last_ok > 100 ) {
+        ok_count = 0;
+    }
+
     clock_t time = clock();
     unsigned long dt = time / 1000 - previous_frame;
     previous_frame = time / 1000;
@@ -73,96 +88,203 @@ void Player::update(){
         recheck_directory();
     }
 
-    current_player->update();
-    if( next_player->isPlaying() ) {
-        next_player->update();
-    }
-    if( skip ) {
-        remain -= dt;
-    } else {
-        remain = (current_player->getDuration() - 
-            current_player->getPosition() * 
-            current_player->getDuration()) * 1000; 
-    }
-    if( remain < FADE_TIME ) {
-        current_alpha = 255.0f * remain / FADE_TIME;
-        float v = 1 * remain / FADE_TIME;
-        current_player->setVolume(v);
-        next_player->setVolume(1 - v);
-        if( !next_player->isPlaying() ) {
-            next_player->play();
+    player.update();
+    
+    float remain = (player.getDuration() - 
+            player.getPosition() * 
+            player.getDuration()) * 1000; 
+    fadeout = fadeout || remain < FADE_TIME;
+
+    if( fadeout ) {
+        alpha -= 255.0f / FADE_TIME * dt;
+        volume -= 1.0f / FADE_TIME * dt;
+        player.setVolume(volume);
+        if( volume < 0 ) {
+            volume = 0;
         }
-        if( current_alpha < 10 ) {
-            current_alpha = 255;
-            ofVideoPlayer* foo = next_player;
-            next_player = current_player;
-            current_player = foo;
-            current_player->setVolume(1);
-            playing = cued;
-            cue();
+        if( alpha < 0 ) {
+            player.setVolume(0);
+            load();
         }
+    } else if( alpha < 255  || volume < 1.0f) {
+        alpha += 255.0f / FADE_TIME * dt;
+        if ( alpha > 255 ) {
+            alpha = 255;
+        }
+        volume += 1 / FADE_TIME * dt;
+        if( volume > 1 ) {
+            volume = 1;
+        }
+        player.setVolume(volume);
     }
 }
 
 void Player::draw(){
-    if( next_player->isPlaying() ) {
-        ofPushMatrix();
-        ofPushStyle();
-
-        ofSetColor(255);
-        ofTranslate(screen_w/2,screen_h/2);
-        next_player->draw(-next_player->getWidth()/2,
-                -next_player->getHeight()/2);
-
-        ofPopStyle();
-        ofPopMatrix();
-
-    }
     ofPushMatrix();
     ofPushStyle();
 
-    ofSetColor(255,255,255,current_alpha);
-    ofTranslate(screen_w/2,screen_h/2);
-    current_player->draw(-current_player->getWidth()/2,
-            -current_player->getHeight()/2);
+    ofSetColor(255,255,255,alpha);
+    ofTranslate(screen_w/2+pos.x,screen_h/2+pos.y);
+    player.draw(-size.x/2,-size.y/2,
+            size.x, size.y);
 
+    ofSetColor(255);
+    switch( state ) {
+        case PLAYER_RESIZE:
+            ofNoFill();
+            ofSetLineWidth(5);
+            ofDrawRectangle(-size.x/4,-size.y/4,
+                    size.x/2,size.y/2);
+            break;
+        case PLAYER_REPOSITION:
+            ofFill();
+            ofDrawEllipse(-10,-10, 20, 20);
+            break;
+        case PLAYER_PLAY:
+            if( ok_count > 5 ) {
+                ofSetLineWidth(10);
+                ofPath p;
+                p.moveTo(0,0);
+                p.lineTo(200,0);
+                p.arc(0,0,200,200,0,360*(ok_count-5)/60);
+                p.lineTo(0,0);
+                p.draw();
+            }
+            break;
+    }
     ofPopStyle();
     ofPopMatrix();
 }
 
 void Player::keyPressed(int key){
+    bool update_settings = false;
     switch( key ) {
-        case 'd': //LEFT
-            if( !skip ) {
-                skip = true;
-                reverse = true;
-                remain = FADE_TIME;
+        case 356: //LEFT
+            {
+                switch(state) {
+                    case PLAYER_PLAY:
+                        reverse = true;
+                        fadeout = true;
+                        break;
+                    case PLAYER_RESIZE:
+                        size.x-=1;
+                        break;
+                    case PLAYER_REPOSITION:
+                        pos.x-=1;
+                        break;
+                }
             }
             break;
-        case 'f': //RIGHT
-            if( !skip ) {
-                skip = true;
-                reverse = false;
-                remain = FADE_TIME;
+        case 358: //RIGHT
+            {
+                switch(state) {
+                    case PLAYER_PLAY:
+                        reverse = false;
+                        fadeout = true;
+                        break;
+                    case PLAYER_RESIZE:
+                        size.x+=1;
+                        break;
+                    case PLAYER_REPOSITION:
+                        pos.x+=1;
+                        break;
+                }
             }
             break;
-        case 'e': // UP
+        case 357: // UP
+            {
+                switch(state) {
+                    case PLAYER_PLAY:
+                        reverse = true;
+                        fadeout = true;
+                        break;
+                    case PLAYER_RESIZE:
+                        size.y-=1;
+                        break;
+                    case PLAYER_REPOSITION:
+                        pos.y-=1;
+                        break;
+                }
+            }
             break;
-        case 'g': //DOWN
+        case 359: //DOWN
+            {
+                switch(state) {
+                    case PLAYER_PLAY:
+                        reverse = false;
+                        fadeout = true;
+                        break;
+                    case PLAYER_RESIZE:
+                        size.y+=1;
+                        break;
+                    case PLAYER_REPOSITION:
+                        pos.y+=1;
+                        break;
+                }
+            }
             break;
         case 13: //OK
+            if( state != PLAYER_PLAY ) {
+                state = PLAYER_PLAY;
+                update_settings = true;
+            } else {
+                if( previous_frame - last_ok < 100 ) {
+                    ok_count += 1;
+                    if( ok_count >= 65 ) {
+                        reset_settings();
+                        ok_count = -20;
+                    }
+                }
+                last_ok = previous_frame;
+            }
             break;
-        case 'h': //UPUP
+        case 360: //UPUP
+            if( state == PLAYER_REPOSITION ) {
+                state = PLAYER_PLAY;
+                update_settings = true;
+            } else {
+                state = PLAYER_REPOSITION;
+            }
             break;
-        case 'i': //DOWNDOWN
+        case 361: //DOWNDOWN
+            if( state == PLAYER_RESIZE ) {
+                state = PLAYER_PLAY;
+                update_settings = true;
+            } else {
+                state = PLAYER_RESIZE;
+            }
             break;
+    }
+    if( update_settings) { 
+        settings["width"] = size.x;
+        settings["height"] = size.y;
+        settings["position"]["x"] = pos.x;
+        settings["position"]["y"] = pos.y;
+
+        std::ofstream o("settings.json");
+        o << std::setw(4) << settings << std::endl;
+        o.close();
     }
 }
 
 void Player::recheck_directory() {
     ofDirectory dir(".");
     dir.listDir();
-    for(int i = 0; i < dir.size(); i++) {
+    for(size_t i = 0; i < dir.size(); i++) {
         files.push_back(dir.getPath(i)); 
     }
+}
+
+void Player::reset_settings() {
+    settings["width"] = screen_w;
+    settings["height"] = screen_h;
+    settings["position"]["x"] = 0;
+    settings["position"]["y"] = 0;
+
+    std::ofstream o("settings.json");
+    o << std::setw(4) << settings << std::endl;
+    o.close();
+
+    size = ofVec2f(settings["width"], settings["height"]);
+    pos = ofVec2f(settings["position"]["x"],settings["position"]["y"]);
 }

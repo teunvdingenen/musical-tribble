@@ -2,6 +2,9 @@
 
 #include "ofMain.h"
 #include <vector>
+#include "json.hpp"
+
+using json = nlohmann::json;
 
 class Player : public ofBaseApp{
     public:
@@ -11,26 +14,30 @@ class Player : public ofBaseApp{
 
         void set_dimension(int,int);
         void load();
-        void cue();
         
         void keyPressed(int key);
 
         void recheck_directory();
+        void reset_settings();
    private:
-        const float FADE_TIME = 7000;
+        enum PLAYER_STATE {
+            PLAYER_REPOSITION,
+            PLAYER_RESIZE,
+            PLAYER_PLAY
+        };
+
+        PLAYER_STATE state;
+
+        const float FADE_TIME = 1000;
         const unsigned long DIR_INTERVAL = 10000;
 
-        ofVideoPlayer player_a;
-        ofVideoPlayer player_b;
+        ofVideoPlayer player;
 
-        ofVideoPlayer* current_player;
-        ofVideoPlayer* next_player;
-
-        bool skip;
+        bool fadeout;
         bool reverse;
 
-        float current_alpha;
-        float remain;
+        float alpha;
+        float volume;
 
         int screen_w;
         int screen_h;
@@ -40,6 +47,12 @@ class Player : public ofBaseApp{
 
         unsigned long previous_frame;
         unsigned long last_dir_check;
+        unsigned long last_ok;
+        int ok_count;
 
         vector<string> files;
+        ofVec2f size;
+        ofVec2f pos;
+
+        json settings;
 };
